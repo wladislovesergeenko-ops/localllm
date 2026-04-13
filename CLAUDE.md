@@ -1,74 +1,79 @@
 # localllm — контекст проекта
 
 ## Что это
-Локальный LLM-стек на базе LM Studio + Telegram-бот на базе Hermes Agent.
+LLM-стек: Telegram-бот на базе Hermes Agent, работает на VPS через OpenRouter.
 
-## LM Studio
-- **Base URL:** `http://10.8.0.15:1234/v1` (машина локальная, не VPN)
-- **API:** OpenAI-compatible
-- **Ключ:** в `hermes/.env` (не коммитить)
+## Инфраструктура
 
-### Доступные модели
-| ID | Назначение |
-|----|-----------|
-| `google/gemma-3-4b` | Быстрый бот, операционные задачи |
-| `google/gemma-4-e4b` | Сложный reasoning (`max_tokens ≥ 1000`!) |
-| `qwen/qwen3-vl-8b` | Качественный текст, код, vision |
-| `text-embedding-nomic-embed-text-v1.5` | Эмбеддинги |
+### VPS (продакшн)
+- **Сервер:** `31.130.129.3` (Linux, root)
+- **Путь:** `/opt/localllm/hermes/`
+- **Docker:** контейнер `hermes`, изолирован от остальных проектов на сервере
 
-Подробный бенчмарк: [`benchmark_results.md`](./benchmark_results.md)
+### LM Studio (локально, не используется ботом)
+- **Base URL:** `http://10.8.0.15:1234/v1`
+- **Модели:** gemma-3-4b, gemma-4-e4b, qwen3-vl-8b, nomic-embed
+- **Бенчмарк:** [`benchmark_results.md`](./benchmark_results.md)
 
 ---
 
 ## Hermes Agent (Telegram-бот)
 
 ### Статус
-Развёрнут и работает в Docker. Telegram-бот активен.
+Задеплоен на VPS, работает в Docker. Локальный контейнер остановлен.
 
 ### Структура
 ```
 hermes/
 ├── docker-compose.yml   # Docker-конфиг
 ├── config.yaml          # Конфиг Hermes (модель, TTS, gateway)
+├── deploy.sh            # Скрипт деплоя (клон + патчи + запуск)
+├── .env.example         # Шаблон ключей
 ├── .env                 # Ключи (не коммитить)
-└── hermes-agent/        # Клон NousResearch/hermes-agent (локально)
+└── hermes-agent/        # Клон NousResearch/hermes-agent (в .gitignore)
 ```
 
-### Управление
+### Управление (на сервере)
 ```bash
-cd hermes
-docker compose up -d          # запустить
+ssh root@31.130.129.3
+cd /opt/localllm/hermes
 docker compose restart        # перезапустить (после изменений config.yaml)
-docker compose down           # остановить
 docker compose logs -f        # логи
+docker compose down           # остановить
+docker compose up -d --build  # пересобрать (после патчей)
 ```
 
 ### Текущая конфигурация (`config.yaml`)
-- **Основная модель:** `minimax/minimax-m2.7` через OpenRouter
-- **Вспомогательная модель:** Gemini Flash Preview (авто, через OpenRouter — для сжатия контекста)
-- **TTS:** Microsoft Edge TTS, голос `ru-RU-SvetlanaNeural` (бесплатно)
-- **STT:** faster-whisper (локально, модель кешируется в Docker volume)
-- **Terminal backend:** local, cwd `/opt/data/workspace`
+- **Основная модель:** `google/gemini-2.0-flash-001` через OpenRouter ($0.10/$0.40 за млн токенов)
+- **Вспомогательная модель:** Gemini Flash Preview (авто, OpenRouter — сжатие контекста)
+- **TTS:** Microsoft Edge TTS, голос `ru-RU-SvetlanaNeural`, скорость 1.5x (бесплатно)
+- **STT:** faster-whisper (локально в контейнере, кешируется в Docker volume)
+- **Display:** tool_progress отключен (не показывает `🔊 text_to_speech:...`)
+- **Патч:** голосовой ответ без дубля текстом
 
 ### Ключи в `hermes/.env`
 | Переменная | Назначение |
 |-----------|-----------|
 | `OPENAI_API_KEY` | OpenAI Whisper (STT для голосовых) |
-| `OPENROUTER_API_KEY` | OpenRouter (основная модель) |
+| `OPENROUTER_API_KEY` | OpenRouter (основная + вспомогательная модель) |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot |
-| `TELEGRAM_ALLOWED_USERS` | Whitelist user ID: 5120385261 |
+| `TELEGRAM_ALLOWED_USERS` | Whitelist user ID |
 
-### Известные фиксы (не трогать)
-- В `hermes-agent/Dockerfile` добавлен `git` в apt-зависимости (npm требует)
-- `hermes-agent/docker/entrypoint.sh` конвертирован из CRLF → LF (Windows)
-- `docker-compose.yml` билдит из `./hermes-agent` (не с GitHub — Windows не поддерживает)
-- Команда запуска: `gateway run` (не `gateway start` — нет systemd в Docker)
-- `config.yaml` смонтирован без `:ro` — Hermes пишет в него при `/sethome`
+### Деплой (`deploy.sh`)
+Скрипт автоматически:
+1. Клонирует `NousResearch/hermes-agent`
+2. Патчит Dockerfile (добавляет `git` + `gosu` в apt)
+3. Патчит `base.py` (убирает текст при голосовом ответе)
+4. Собирает и запускает контейнер
 
 ### Голосовой режим
-Бот поддерживает полный voice-to-voice пайплайн:
-- Пользователь → войс → Whisper → модель → Edge TTS → войс обратно
+Voice-to-voice пайплайн: войс → Whisper → модель → Edge TTS → войс обратно
 - `/voice off` — отключить голосовые ответы
-- `/voice tts` — голос на все сообщения, не только войс
-- Голос меняется в `config.yaml`: `tts.edge.voice`
-- Другие бесплатные голоса: `ru-RU-DmitryNeural` (муж.), `ru-RU-SvetlanaNeural` (жен.)
+- `/voice tts` — голос на все сообщения
+- Голос: `tts.edge.voice` в config.yaml
+- Варианты: `ru-RU-SvetlanaNeural` (жен.), `ru-RU-DmitryNeural` (муж.)
+
+### Известные особенности
+- Первый запрос после старта — cold start OpenRouter (~30-60 сек), потом быстро
+- Команда запуска: `gateway run` (не `gateway start` — нет systemd в Docker)
+- `config.yaml` без `:ro` — Hermes пишет в него при `/sethome`
