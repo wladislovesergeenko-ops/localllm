@@ -1,20 +1,21 @@
 services:
   hermes:
     build:
-      context: https://github.com/NousResearch/hermes-agent.git#main
+      context: ./hermes-agent
     container_name: hermes
     restart: unless-stopped
     volumes:
       # Данные агента — только этот volume, хостовая ФС НЕ монтируется
       - hermes-data:/opt/data
       # Наш конфиг поверх дефолтного
-      - ./config.yaml:/opt/data/config.yaml:ro
+      - ./config.yaml:/opt/data/config.yaml
       - ./.env:/opt/data/.env
     extra_hosts:
       # Чтобы контейнер видел LM Studio на Windows-хосте
       - "host.docker.internal:host-gateway"
     environment:
       - HERMES_UID=1000
+    command: gateway run
     # Порт нужен только если хочешь web-интерфейс
     # ports:
     #   - "7860:7860"

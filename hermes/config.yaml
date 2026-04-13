@@ -1,19 +1,19 @@
 model:
-  provider: "lmstudio"
-  base_url: "http://host.docker.internal:1234/v1"
-  default: "google/gemma-3-4b"
+  provider: "openrouter"
+  default: "google/gemini-2.0-flash-001"
 
-  # Для сложных задач с reasoning — переключать вручную:
-  # hermes model → выбрать google/gemma-4-e4b (помни: max_tokens должен быть большим)
-
-  # Лимиты под железо (RTX 3050 8GB, context выставлен в LM Studio)
-  context_length: 8192
-  # max_tokens оставляем unset — модель сама знает свой потолок
-  # Исключение: для gemma-4-e4b нужно явно 1500+
+display:
+  tool_progress: "off"
 
 terminal:
   backend: "local"
   cwd: "/opt/data/workspace"
+
+tts:
+  provider: "edge"
+  edge:
+    voice: "ru-RU-SvetlanaNeural"
+    speed: 1.5
 
 gateway:
   # Telegram настраивается через .env

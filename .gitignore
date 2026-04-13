@@ -1,3 +1,4 @@
 hermes/.env
 *.env
 .DS_Store
+hermes/hermes-agent/
